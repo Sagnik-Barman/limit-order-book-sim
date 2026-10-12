@@ -51,6 +51,9 @@ public:
     std::vector<std::pair<Price, Quantity>> bid_levels(size_t depth) const;
     std::vector<std::pair<Price, Quantity>> ask_levels(size_t depth) const;
 
+    // True if `id` is resting on the book (not yet filled or cancelled). O(1).
+    bool contains(OrderId id) const { return bids_by_id_.count(id) || asks_by_id_.count(id); }
+
     size_t bid_order_count() const { return bids_by_id_.size(); }
     size_t ask_order_count() const { return asks_by_id_.size(); }
 
@@ -60,9 +63,13 @@ private:
     std::map<Price, Level, std::greater<Price>> bids_;  // best bid = bids_.begin()
     std::map<Price, Level, std::less<Price>> asks_;     // best ask = asks_.begin()
 
-    // For O(1) cancel: order id -> (price level, iterator into that level's list)
-    std::unordered_map<OrderId, std::pair<Price, Level::iterator>> bids_by_id_;
-    std::unordered_map<OrderId, std::pair<Price, Level::iterator>> asks_by_id_;
+    using BidMap = std::map<Price, Level, std::greater<Price>>;
+    using AskMap = std::map<Price, Level, std::less<Price>>;
+    // For O(1) cancel: order id -> (iterator to its price level, iterator into that level's list).
+    // std::map iterators stay valid until that level is erased, and a level is only erased
+    // once its last order is gone (and so already removed from this index).
+    std::unordered_map<OrderId, std::pair<BidMap::iterator, Level::iterator>> bids_by_id_;
+    std::unordered_map<OrderId, std::pair<AskMap::iterator, Level::iterator>> asks_by_id_;
 
     std::vector<Fill> match(Order &incoming);
     void rest(Order order);

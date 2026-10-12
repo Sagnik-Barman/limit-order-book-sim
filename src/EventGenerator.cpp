@@ -22,7 +22,12 @@ Price EventGenerator::to_ticks(double price) const {
 }
 
 void EventGenerator::step(MatchingEngine &engine) {
-    fair_value_ += fair_value_vol_ * fv_noise_(rng_);
+    double vol = fair_value_vol_;
+    if (high_vol_mult_ > 1.0) {               // regimes enabled (see set_vol_regimes)
+        if (regime_switch_(rng_)) high_regime_ = !high_regime_;
+        if (high_regime_) vol *= high_vol_mult_;
+    }
+    fair_value_ += vol * fv_noise_(rng_);
     fair_value_ = std::max(fair_value_, tick_size_ * 10);  // keep it away from zero
 
     // Occasionally cancel a random stale background order, so the book

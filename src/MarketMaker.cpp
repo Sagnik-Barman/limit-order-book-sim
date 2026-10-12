@@ -33,19 +33,28 @@ void MarketMaker::update_quotes(MatchingEngine &engine, double reference_price) 
     double skew_ticks = inventory_ * inventory_skew_ticks_per_unit_;
     Price mid_ticks = to_ticks(reference_price);
 
-    Price bid_price = mid_ticks - half_spread_ticks_ - static_cast<Price>(std::llround(skew_ticks));
-    Price ask_price = mid_ticks + half_spread_ticks_ - static_cast<Price>(std::llround(skew_ticks));
+    // Update the EWMA volatility estimate from the change in the reference price.
+    double ref_ticks = reference_price / tick_size_;
+    if (last_ref_ticks_ >= 0.0) {
+        double change = ref_ticks - last_ref_ticks_;
+        ewma_var_ticks_ = (1.0 - ewma_alpha_) * ewma_var_ticks_ + ewma_alpha_ * change * change;
+    }
+    last_ref_ticks_ = ref_ticks;
+    Price half_spread = half_spread_ticks_ +
+                        static_cast<Price>(std::llround(vol_mult_ * std::sqrt(ewma_var_ticks_)));
 
+    Price bid_price = mid_ticks - half_spread - static_cast<Price>(std::llround(skew_ticks));
+    Price ask_price = mid_ticks + half_spread - static_cast<Price>(std::llround(skew_ticks));
     // Hard inventory cap: stop adding to a position once it's large enough,
     // only quote the side that would reduce it.
-    bool allow_buy = inventory_ < max_inventory_;
-    bool allow_sell = inventory_ > -max_inventory_;
+    Quantity bid_size = std::min(quote_size_, max_inventory_ - inventory_);
+    Quantity ask_size = std::min(quote_size_, max_inventory_ + inventory_);
 
-    if (allow_buy && bid_price > 0) {
-        resting_bid_id_ = engine.submit_limit(Side::Buy, bid_price, quote_size_, /*is_market_maker=*/true);
+    if (bid_size > 0 && bid_price > 0) {
+        resting_bid_id_ = engine.submit_limit(Side::Buy, bid_price, bid_size, /*is_market_maker=*/true);
     }
-    if (allow_sell) {
-        resting_ask_id_ = engine.submit_limit(Side::Sell, ask_price, quote_size_, /*is_market_maker=*/true);
+    if (ask_size > 0) {
+        resting_ask_id_ = engine.submit_limit(Side::Sell, ask_price, ask_size, /*is_market_maker=*/true);
     }
 }
 

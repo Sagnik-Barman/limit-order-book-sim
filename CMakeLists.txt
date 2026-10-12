@@ -18,3 +18,9 @@ add_executable(lob_sim
     src/MarketMaker.cpp
     src/main.cpp
 )
+
+# Order-book microbenchmark: throughput and per-operation latency (see README)
+add_executable(book_bench
+    src/OrderBook.cpp
+    bench/bench_book.cpp
+)

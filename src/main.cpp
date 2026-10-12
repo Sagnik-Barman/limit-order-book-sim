@@ -15,7 +15,7 @@ struct SimConfig {
     double limit_order_rate = 3.0;      // background limit orders per step (Poisson mean)
     double market_order_rate = 0.6;     // background market orders per step (Poisson mean)
     double avg_order_size = 8.0;
-    Price half_spread_ticks = 6;
+    Price half_spread_ticks = 15;
     Quantity quote_size = 10;
     double inventory_skew_ticks_per_unit = 0.015;
     Quantity max_inventory = 300;

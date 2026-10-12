@@ -68,13 +68,13 @@ std::vector<Fill> OrderBook::match(Order &incoming) {
 
 void OrderBook::rest(Order order) {
     if (order.side == Side::Buy) {
-        Level &level = bids_[order.price];
-        level.push_back(order);
-        bids_by_id_[order.id] = {order.price, std::prev(level.end())};
+        auto lvl = bids_.try_emplace(order.price).first;
+        lvl->second.push_back(order);
+        bids_by_id_[order.id] = {lvl, std::prev(lvl->second.end())};
     } else {
-        Level &level = asks_[order.price];
-        level.push_back(order);
-        asks_by_id_[order.id] = {order.price, std::prev(level.end())};
+        auto lvl = asks_.try_emplace(order.price).first;
+        lvl->second.push_back(order);
+        asks_by_id_[order.id] = {lvl, std::prev(lvl->second.end())};
     }
 }
 
@@ -99,18 +99,16 @@ void OrderBook::erase_from_index(OrderId id, Side side) {
 
 bool OrderBook::cancel(OrderId id) {
     if (auto it = bids_by_id_.find(id); it != bids_by_id_.end()) {
-        auto [price, list_it] = it->second;
-        auto level_it = bids_.find(price);
+        auto [level_it, list_it] = it->second;   // O(1): no map lookup
         level_it->second.erase(list_it);
-        if (level_it->second.empty()) bids_.erase(level_it);
+        if (level_it->second.empty()) bids_.erase(level_it);  // amortized O(1)
         bids_by_id_.erase(it);
         return true;
     }
     if (auto it = asks_by_id_.find(id); it != asks_by_id_.end()) {
-        auto [price, list_it] = it->second;
-        auto level_it = asks_.find(price);
+        auto [level_it, list_it] = it->second;   // O(1): no map lookup
         level_it->second.erase(list_it);
-        if (level_it->second.empty()) asks_.erase(level_it);
+        if (level_it->second.empty()) asks_.erase(level_it);  // amortized O(1)
         asks_by_id_.erase(it);
         return true;
     }

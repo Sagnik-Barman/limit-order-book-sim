@@ -25,6 +25,17 @@ public:
 
     double fair_value() const { return fair_value_; }
 
+    // Optional volatility regimes: the fair value's per-step vol switches between
+    // `fair_value_vol` (calm) and `fair_value_vol * high_vol_mult` (stressed), as a
+    // two-state Markov chain that flips with probability `switch_prob` each step.
+    // Off by default (high_vol_mult <= 1), in which case no extra random numbers are
+    // drawn, so every existing seed reproduces exactly.
+    void set_vol_regimes(double high_vol_mult, double switch_prob) {
+        high_vol_mult_ = high_vol_mult;
+        regime_switch_ = std::bernoulli_distribution(switch_prob);
+    }
+    bool in_high_vol_regime() const { return high_regime_; }
+
 private:
     double fair_value_;
     double fair_value_vol_;
@@ -43,6 +54,10 @@ private:
     std::bernoulli_distribution cancel_dist_{0.02};  // per resting background order, per step
 
     std::deque<OrderId> outstanding_background_orders_;
+
+    double high_vol_mult_ = 1.0;
+    bool high_regime_ = false;
+    std::bernoulli_distribution regime_switch_{0.0};
 
     Price to_ticks(double price) const;
 };

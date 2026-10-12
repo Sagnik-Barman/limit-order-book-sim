@@ -31,6 +31,14 @@ public:
 
     double realized_cash() const { return cash_; }
     double mark_to_market_pnl(double reference_price) const;
+    
+    // Volatility-scaled spread: half-spread = base + vol_mult * (EWMA volatility
+    // of the reference price, in ticks). vol_mult = 0 (the default) keeps the
+    // old fixed spread. ewma_alpha sets how fast the estimate reacts.
+    void set_vol_scaling(double vol_mult, double ewma_alpha = 0.05) {
+        vol_mult_ = vol_mult;
+        ewma_alpha_ = ewma_alpha;
+    }
     Quantity inventory() const { return inventory_; }
 
 private:
@@ -41,6 +49,10 @@ private:
     Quantity max_inventory_;
 
     double cash_ = 0.0;
+    double vol_mult_ = 0.0;
+    double ewma_alpha_ = 0.05;
+    double ewma_var_ticks_ = 0.0;   // EWMA of squared reference-price changes, in ticks^2
+    double last_ref_ticks_ = -1.0;  // -1 means "no previous price yet"
     Quantity inventory_ = 0;
 
     std::optional<OrderId> resting_bid_id_;

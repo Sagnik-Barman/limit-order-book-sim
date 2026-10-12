@@ -18,8 +18,13 @@ FIFO — first in, first filled — which is strict **price-time priority**,
 the standard matching rule at most real exchanges. Prices are integer
 ticks, not doubles — real exchanges represent price this way, and it
 sidesteps an entire category of floating-point equality bugs a naive
-implementation would hit in the matching logic. Cancel is O(1) via an
-`unordered_map<OrderId, list-iterator>` index kept in sync with the book.
+implementation would hit in the matching logic. Cancel is O(1): an
+`unordered_map<OrderId, (level iterator, list iterator)>` index stores, for
+every resting order, an iterator to its price level in the `std::map` and to
+its node in that level's list, so a cancel never searches the map. (`std::map`
+iterators stay valid until that level is erased, and a level is only erased
+once its last order is gone.) Adding an order at a brand-new price is still
+O(log L) for the map insert.
 
 **Matching engine (`MatchingEngine.hpp/cpp`).** A thin layer over the book
 that owns order-id/timestamp generation and the trade tape (append-only
@@ -57,6 +62,19 @@ cd ..
 python scripts/plot_results.py   # needs pandas + matplotlib
 ```
 
+### Order-book benchmark
+
+```bash
+./build/book_bench 1000000     # 1M operations: 60% limit adds, 30% cancels, 10% market orders
+```
+
+Replays a pre-generated, seeded stream of order operations straight into
+`OrderBook` (no strategy, no logging) and prints throughput (operations per
+second) and per-operation latency percentiles (p50 / p99 / p99.9) for each
+operation type. Run it on your own machine, in a Release build, with nothing
+else heavy running; per-operation timing adds roughly 20-40 ns of clock
+overhead, which the output reports so you can subtract it.
+
 `lob_sim` writes `output/simulation_log.csv` (price, spread, inventory,
 PnL sampled every 10 steps) and prints a summary: final mark-to-market
 PnL, max inventory reached, max drawdown, and fill count.
@@ -65,12 +83,12 @@ PnL, max inventory reached, max drawdown, and fill count.
 
 ## Reading the output
 
-The market maker should show: inventory oscillating around zero (not
-drifting to one side and staying there — if it does, the skew parameter
-is too weak), a positive mark-to-market PnL trending up on average (it's
-capturing the bid-ask spread from uninformed flow), and drawdowns that
-correspond to periods where the fair value moved fast enough that the
-maker got run over on one side before it could re-quote.
+The market maker should show inventory oscillating around zero (if it drifts
+to one side and stays there, the skew is too weak) and drawdowns in periods
+where the fair value moved fast enough to run the maker over before it could
+re-quote. A single run proves little: see `ablation/ABLATION_RESULTS.md` for
+the 30-seed results, where a tight fixed spread loses money on average because
+55% of its fills are adverse, and an EWMA-volatility-scaled spread fixes it.
 
 ## What to be ready to explain in an interview
 
@@ -82,21 +100,18 @@ maker got run over on one side before it could re-quote.
   eventually take on unbounded directional risk if the fair value trends,
   because it keeps getting run over on the same side. Skewing quotes is
   the mechanism that makes inventory mean-revert toward zero.
-- **The gap between this and a real market maker**: no adverse selection
-  modeling (this repo's background traders are not informed — a real
-  market has to worry about who it's trading against), no latency/queue
-  position modeling, spread and skew are fixed constants rather than
-  derived from a risk-aversion parameter and time horizon the way
-  Avellaneda-Stoikov actually derives them.
+- **The gap between this and a real market maker**: adverse selection here
+  comes only from background flow priced off the true value hitting quotes
+  centred on a lagging book mid (there are no explicitly informed traders);
+  no latency or queue-position modelling; and the spread rule is a heuristic
+  (base + multiple of EWMA vol) rather than derived from a risk-aversion
+  parameter and time horizon the way Avellaneda-Stoikov derives it.
 
 ## Known limitations (say these before you're asked)
 
-- The inventory cap is checked before quoting, not sized into the quote
-  itself — so a single large fill can push inventory a bit past the cap
-  before the next requote catches it (visible in the summary output: max
-  inventory sometimes slightly exceeds the configured cap). A production
-  version would size the resting quote down as inventory approaches the
-  limit instead of a hard on/off cutoff.
+- The inventory cap is enforced by sizing each quote to the room left under
+  the cap (fixed Sep 2026; it used to switch a side on/off and overshot to
+  309). Max |inventory| is now exactly the cap in every ablation run.
 - Requoting happens every single simulation step — unrealistic vs. a real
   system with order-entry latency and a market that doesn't literally wait
   for you; also generates far more cancel/replace churn than a live
@@ -112,8 +127,9 @@ maker got run over on one side before it could re-quote.
   closed-form optimal quotes (function of inventory, volatility, risk
   aversion, and time-to-horizon).
 - Add a second, informed "momentum" trader type to the event generator and
-  watch the market maker's PnL degrade — then fix it by widening spreads
-  when recent volatility spikes.
+  watch the market maker's PnL degrade. (Widening spreads when recent
+  volatility spikes is done: see the vol-scaling and regime results in
+  `ablation/ABLATION_RESULTS.md`.)
 - Multi-level quoting (resting size at more than one price level per
   side) instead of a single quote per side.
 - Latency: add a fixed or random delay between the market maker deciding
